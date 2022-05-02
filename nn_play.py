@@ -2,14 +2,19 @@
 # Created Time: 六 12/30 13:49:21 2017
 # Author: Taihong Xiao <xiaotaihong@126.com>
 
+from model_fine import JumpModelFine
+from model import JumpModel
 import numpy as np
 import time
-import os, glob, shutil
+import os
+import glob
+import shutil
 import cv2
 import argparse
-import tensorflow as tf
-from model import JumpModel
-from model_fine import JumpModelFine
+# import tensorflow as tf
+import tensorflow._api.v2.compat.v1 as tf
+# tf.disable_v2_behavior()
+
 
 def multi_scale_search(pivot, screen, range=0.3, num=10):
     H, W = screen.shape[:2]
@@ -29,11 +34,13 @@ def multi_scale_search(pivot, screen, range=0.3, num=10):
         if found is None or res.max() > found[-1]:
             found = (pos_h, pos_w, r, res.max())
 
-    if found is None: return (0,0,0,0,0)
+    if found is None:
+        return (0, 0, 0, 0, 0)
     pos_h, pos_w, r, score = found
     start_h, start_w = int(pos_h * r), int(pos_w * r)
     end_h, end_w = int((pos_h + h) * r), int((pos_w + w) * r)
     return [start_h, start_w, end_h, end_w, score]
+
 
 class WechatAutoJump(object):
     def __init__(self, phone, sensitivity, serverURL, debug, resource_dir):
@@ -42,8 +49,10 @@ class WechatAutoJump(object):
         self.debug = debug
         self.resource_dir = resource_dir
         self.step = 0
-        self.ckpt = os.path.join(self.resource_dir, 'train_logs_coarse/best_model.ckpt-13999')
-        self.ckpt_fine = os.path.join(self.resource_dir, 'train_logs_fine/best_model.ckpt-53999')
+        self.ckpt = os.path.join(
+            self.resource_dir, 'train_logs_coarse/best_model.ckpt-13999')
+        self.ckpt_fine = os.path.join(
+            self.resource_dir, 'train_logs_fine/best_model.ckpt-53999')
         self.serverURL = serverURL
         self.load_resource()
         if self.phone == 'IOS':
@@ -55,17 +64,21 @@ class WechatAutoJump(object):
                 os.mkdir(self.debug)
 
     def load_resource(self):
-        self.player = cv2.imread(os.path.join(self.resource_dir, 'player.png'), 0)
+        self.player = cv2.imread(os.path.join(
+            self.resource_dir, 'player.png'), 0)
         # network initization
         self.net = JumpModel()
         self.net_fine = JumpModelFine()
         self.img = tf.placeholder(tf.float32, [None, 640, 720, 3], name='img')
-        self.img_fine = tf.placeholder(tf.float32, [None, 320, 320, 3], name='img_fine')
+        self.img_fine = tf.placeholder(
+            tf.float32, [None, 320, 320, 3], name='img_fine')
         self.label = tf.placeholder(tf.float32, [None, 2], name='label')
         self.is_training = tf.placeholder(np.bool, name='is_training')
         self.keep_prob = tf.placeholder(np.float32, name='keep_prob')
-        self.pred = self.net.forward(self.img, self.is_training, self.keep_prob)
-        self.pred_fine = self.net_fine.forward(self.img_fine, self.is_training, self.keep_prob)
+        self.pred = self.net.forward(
+            self.img, self.is_training, self.keep_prob)
+        self.pred_fine = self.net_fine.forward(
+            self.img_fine, self.is_training, self.keep_prob)
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
@@ -85,18 +98,21 @@ class WechatAutoJump(object):
         elif self.phone == 'IOS':
             self.client.screenshot('state.png')
         if not os.path.exists('state.png'):
-            raise NameError('Cannot obtain screenshot from your phone! Please follow the instructions in readme!')
+            raise NameError(
+                'Cannot obtain screenshot from your phone! Please follow the instructions in readme!')
 
         if self.debug:
-            shutil.copyfile('state.png', os.path.join(self.debug, 'state_{:03d}.png'.format(self.step)))
+            shutil.copyfile('state.png', os.path.join(
+                self.debug, 'state_{:03d}.png'.format(self.step)))
 
         state = cv2.imread('state.png')
         self.resolution = state.shape[:2]
         scale = state.shape[1] / 720.
-        state = cv2.resize(state, (720, int(state.shape[0] / scale)), interpolation=cv2.INTER_NEAREST)
+        state = cv2.resize(
+            state, (720, int(state.shape[0] / scale)), interpolation=cv2.INTER_NEAREST)
         if state.shape[0] > 1280:
             s = (state.shape[0] - 1280) // 2
-            state = state[s:(s+1280),:,:]
+            state = state[s:(s+1280), :, :]
         elif state.shape[0] < 1280:
             s1 = (1280 - state.shape[0]) // 2
             s2 = (1280 - state.shape[0]) - s1
@@ -141,7 +157,7 @@ class WechatAutoJump(object):
         return out
 
     def get_target_position_fast(self, state, player_pos):
-        state_cut = state[:player_pos[0],:,:]
+        state_cut = state[:player_pos[0], :, :]
         m1 = (state_cut[:, :, 0] == 245)
         m2 = (state_cut[:, :, 1] == 245)
         m3 = (state_cut[:, :, 2] == 245)
@@ -160,7 +176,8 @@ class WechatAutoJump(object):
         press_time = int(np.rint(press_time))
         press_h, press_w = int(0.82*self.resolution[0]), self.resolution[1]//2
         if self.phone == 'Android':
-            cmd = 'adb shell input swipe {} {} {} {} {}'.format(press_w, press_h, press_w, press_h, press_time)
+            cmd = 'adb shell input swipe {} {} {} {} {}'.format(
+                press_w, press_h, press_w, press_h, press_time)
             print(cmd)
             os.system(cmd)
         elif self.phone == 'IOS':
@@ -168,22 +185,28 @@ class WechatAutoJump(object):
 
     def debugging(self):
         current_state = self.state.copy()
-        cv2.circle(current_state, (self.player_pos[1], self.player_pos[0]), 5, (0,255,0), -1)
-        cv2.circle(current_state, (self.target_pos[1], self.target_pos[0]), 5, (0,0,255), -1)
-        cv2.imwrite(os.path.join(self.debug, 'state_{:03d}_res_h_{}_w_{}.png'.format(self.step, self.target_pos[0], self.target_pos[1])), current_state)
+        cv2.circle(
+            current_state, (self.player_pos[1], self.player_pos[0]), 5, (0, 255, 0), -1)
+        cv2.circle(
+            current_state, (self.target_pos[1], self.target_pos[0]), 5, (0, 0, 255), -1)
+        cv2.imwrite(os.path.join(self.debug, 'state_{:03d}_res_h_{}_w_{}.png'.format(
+            self.step, self.target_pos[0], self.target_pos[1])), current_state)
 
     def play(self):
         self.state = self.get_current_state()
         self.player_pos = self.get_player_position(self.state)
         if self.phone == 'IOS':
-            self.target_pos = self.get_target_position(self.state, self.player_pos)
+            self.target_pos = self.get_target_position(
+                self.state, self.player_pos)
             print('CNN-search: %04d' % self.step)
         else:
             try:
-                self.target_pos = self.get_target_position_fast(self.state, self.player_pos)
+                self.target_pos = self.get_target_position_fast(
+                    self.state, self.player_pos)
                 print('fast-search: %04d' % self.step)
             except UnboundLocalError:
-                self.target_pos = self.get_target_position(self.state, self.player_pos)
+                self.target_pos = self.get_target_position(
+                    self.state, self.player_pos)
                 print('CNN-search: %04d' % self.step)
         if self.debug:
             self.debugging()
@@ -196,17 +219,24 @@ class WechatAutoJump(object):
             while True:
                 self.play()
         except KeyboardInterrupt:
-                pass
+            pass
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--phone', default='Android', choices=['Android', 'IOS'], type=str, help='mobile phone OS')
-    parser.add_argument('--sensitivity', default=2.045, type=float, help='constant for press time')
-    parser.add_argument('--serverURL', default='http://localhost:8100', type=str, help='ServerURL for wda Client')
-    parser.add_argument('--resource', default='resource', type=str, help='resource dir')
-    parser.add_argument('--debug', default=None, type=str, help='debug mode, specify a directory for storing log files.')
+    parser.add_argument('--phone', default='Android',
+                        choices=['Android', 'IOS'], type=str, help='mobile phone OS')
+    parser.add_argument('--sensitivity', default=2.045,
+                        type=float, help='constant for press time')
+    parser.add_argument('--serverURL', default='http://localhost:8100',
+                        type=str, help='ServerURL for wda Client')
+    parser.add_argument('--resource', default='resource',
+                        type=str, help='resource dir')
+    parser.add_argument('--debug', default='debug', type=str,
+                        help='debug mode, specify a directory for storing log files.')
     args = parser.parse_args()
     # print(args)
 
-    AI = WechatAutoJump(args.phone, args.sensitivity, args.serverURL, args.debug, args.resource)
+    AI = WechatAutoJump(args.phone, args.sensitivity,
+                        args.serverURL, args.debug, args.resource)
     AI.run()
